@@ -664,7 +664,10 @@ bool QuadPlane::setup(void)
     }
     float loop_delta_t = 1.0 / plane.scheduler.get_loop_rate_hz();
 
-    enum Rotation rotation = ROTATION_NONE;
+    enum Rotation rotation = ROTATION_NONE;  //enum 枚举，例如：enum enumlype{Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday};
+    //这句话有两个作用:
+    //第一:声明enumType为新的数据类型，称为枚举(enumeration);
+    //第二:声明Monday、Tuesday等为符号常量，通常称之为枚举量，其值默认分别为0-6。(后面会介绍怎样显式的初始化枚举量的值)  参考于：https://wenku.baidu.com/view/30a686f1b24e852458fb770bf78a6529647d35cb.html
 
     /*
       cope with upgrade from old AP_Motors values for frame_class

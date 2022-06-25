@@ -42,8 +42,8 @@
 #include "vector3.h"
 #include "vector2.h"
 
-template <typename T>
-class Vector3;
+template <typename T>  //声明创建模板 在视频P168中：https://www.bilibili.com/video/BV1et411b73Z?p=174
+class Vector3;  //创建类模板
 
 // 3x3 matrix with elements of type T
 template <typename T>
@@ -280,7 +280,7 @@ public:
     }
 };
 
-typedef Matrix3<int16_t>                Matrix3i;
+typedef Matrix3<int16_t>                Matrix3i;  //typedef 定义数据类型，C++给出的数据类型常见的有int、float、double等 详见：https://blog.csdn.net/lwbeyond/article/details/6191942 以及https://blog.csdn.net/weixin_41001497/article/details/108076377
 typedef Matrix3<uint16_t>               Matrix3ui;
 typedef Matrix3<int32_t>                Matrix3l;
 typedef Matrix3<uint32_t>               Matrix3ul;

@@ -51,16 +51,24 @@ float safe_asin(const T v)
 {
     const float f = static_cast<const float>(v);
     if (isnan(f)) {
-        return 0.0f;
-    }
+        return 0.0f;  //不太理解
+    }  
     if (f >= 1.0f) {
-        return static_cast<float>(M_PI_2);
+        return static_cast<float>(M_PI_2);  //这里应该是用于数据类型转换，将括号里面的数据类型转为float型。static_cast用法浅析：https://blog.csdn.net/zhouwei1221q/article/details/44978361
     }
     if (f <= -1.0f) {
         return static_cast<float>(-M_PI_2);
     }
     return asinf(f);
 }
+//nan： not a number 非数字.
+//注意事项：对负数开方sqrt(-1.0)、对负数求对数(log(-1.0))、0.0/0.0、0.0*inf、inf/inf、inf-inf这些操作都会得到nan。
+//(0/0会产生操作异常；0.0/0.0不会产生操作异常，而是会得到nan)。
+
+//inf :  infinity 无穷大的数，一般是超过浮点数的表示范围。
+//注意事项：1. 1.0/0.0等于inf，-1.0/0.0等于-inf，0.0+inf=inf；
+//2. 1.0/inf等于0.0
+//3. inf是可以与其他浮点数进行比较的，即可以参与<=、>+、==、!=等运算。详见：https://blog.csdn.net/sunyoop/article/details/79295480
 
 template float safe_asin<int>(const int v);
 template float safe_asin<short>(const short v);
@@ -70,7 +78,7 @@ template float safe_asin<double>(const double v);
 template <typename T>
 float safe_sqrt(const T v)
 {
-    float ret = sqrtf(static_cast<float>(v));
+    float ret = sqrtf(static_cast<float>(v));  //这里应该是用于数据类型转换，将括号里面的数据类型转为float型。static_cast用法浅析：https://blog.csdn.net/zhouwei1221q/article/details/44978361
     if (isnan(ret)) {
         return 0;
     }
@@ -262,6 +270,7 @@ ftype wrap_2PI(const ftype radian)
     }
     return res;
 }
+//定义一个可以将数值变为-90到+90的,还没想好怎么写，
 
 template <typename T>
 T constrain_value_line(const T amt, const T low, const T high, uint32_t line)

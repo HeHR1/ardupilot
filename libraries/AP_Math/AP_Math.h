@@ -208,7 +208,7 @@ ftype sq(const T first, const Params... parameters)
 /*
  * Variadic template for calculating the norm (pythagoras) of a vector of any
  * dimension.
- */
+ */  //计算任意维向量的范数(毕达哥拉斯)的可变参数模板。  不过网上找的norm求出来都是几个数的平方和
 template<typename T, typename U, typename... Params>
 ftype norm(const T first, const U second, const Params... parameters)
 {

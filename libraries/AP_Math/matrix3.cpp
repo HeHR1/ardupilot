@@ -58,7 +58,7 @@ void Matrix3<T>::to_euler(T *roll, T *pitch, T *yaw) const
         *yaw = atan2F(b.x, a.x);
     }
 }
-
+//nullptr:空指针。它可以转换成任何指针类型和bool布尔类型（主要是为了兼容普通指针可以作为条件判断语句的写法），但是不能被转换为整数。还是比较迷惑。详见：https://blog.csdn.net/hancoder/article/details/89814638 或 https://zhuanlan.zhihu.com/p/257421030
 template <typename T>
 void Matrix3<T>::from_rotation(enum Rotation rotation)
 {

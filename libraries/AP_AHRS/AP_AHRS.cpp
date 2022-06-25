@@ -166,8 +166,8 @@ const AP_Param::GroupInfo AP_AHRS::var_info[] = {
     AP_GROUPEND
 };
 
-// init sets up INS board orientation
-void AP_AHRS::init()
+// init sets up INS board orientation //NMEA 标准输出——GPS数据格式标准
+void AP_AHRS::init() 
 {
     update_orientation();
 
@@ -296,31 +296,37 @@ Vector2f AP_AHRS::groundspeed_vector(void)
 }
 
 /*
-  calculate sin and cos of roll/pitch/yaw from a body_to_ned rotation matrix
+  calculate sin and cos of roll/pitch/yaw from a body_to_ned rotation matrix  //通过机体转地面的转换矩阵求得Euler角的正弦余弦值
  */
+//下面的 const Matrix3f &rot rot矩阵是Lgb，机体转地面的3*3的矩阵，
 void AP_AHRS::calc_trig(const Matrix3f &rot,
                         float &cr, float &cp, float &cy,
                         float &sr, float &sp, float &sy) const
 {
-    Vector2f yaw_vector(rot.a.x, rot.b.x);
-
+    Vector2f yaw_vector(rot.a.x, rot.b.x);  // 此处的rot.a.x 与 rot.b.x 都是上面rot矩阵里面的元素，分别：rot.a.x 为cosθ*cosψ=cr *cy，rot.a.y 为cosθ*sinψ=cr *sy
+    
+    //float fabsf(float a);//处理float类型的取绝对值
+    //对yaw_vector归一化，在俯仰角θ不为正负90°时（即cosθ不为0时）。
     if (fabsf(yaw_vector.x) > 0 ||
         fabsf(yaw_vector.y) > 0) {
-        yaw_vector.normalize();
-    }
-    sy = constrain_float(yaw_vector.y, -1.0f, 1.0f);
+        yaw_vector.normalize();  //对yaw_vector归一化。 normalize() 作归一化处理。
+    } 
+    sy = constrain_float(yaw_vector.y, -1.0f, 1.0f);  //constrain(amt,low,high)函数的工作过程是：如果amt小于low，则返回low；如果amt大于high，则返回high；否则，返回amt。函数一般可以用于将值归一化到某个区间内。
     cy = constrain_float(yaw_vector.x, -1.0f, 1.0f);
 
-    // sanity checks
+    // sanity checks //合理性检查  
     if (yaw_vector.is_inf() || yaw_vector.is_nan()) {
         sy = 0.0f;
         cy = 1.0f;
-    }
+    } //.is_inf()函数：判断数组的元素是否是无界的（比如， 无穷大、无穷小），
+    //语法格式：TF = isinf(A)，返回一个和A尺寸一样的数组， 如果A中某个元素是inf， 则对应TF中元素是1， 否则TF中对应元素是0。
+    //.is_nan()函数。NaN属性是代表非数字值的特殊值。该属性用于指示某个值不是数字。
+    //假如值是NaN或者是一个非数字值（比如：字符串和对象）， 那么 isNaN 函数返回 true（1） ，否则返回 false（0）。 使用这个函数的典型情况是检查 parseInt 和 parseFloat 方法的输入值。
 
     const float cx2 = rot.c.x * rot.c.x;
     if (cx2 >= 1.0f) {
         cp = 0;
-        cr = 1.0f;
+        cr = 1.0f; //θψφ一个疑问：rot.c.x = -sinθ，cx2 >= 1.0f，那么θ就是±90°，cp = 0;为什么cr = 1.0f呢
     } else {
         cp = safe_sqrt(1 - cx2);
         cr = rot.c.z / cp;
@@ -535,7 +541,7 @@ void AP_AHRS::update_flags(void)
 }
 
 // singleton instance
-AP_AHRS *AP_AHRS::_singleton;
+AP_AHRS *AP_AHRS::_singleton;  //单例实例
 
 namespace AP {
 

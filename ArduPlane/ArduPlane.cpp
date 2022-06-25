@@ -21,7 +21,6 @@
  */
 
 #include "Plane.h"
-
 #define SCHED_TASK(func, rate_hz, max_time_micros) SCHED_TASK_CLASS(Plane, &plane, func, rate_hz, max_time_micros)
 
 
@@ -305,10 +304,25 @@ void Plane::one_second_loop()
     }
 }
 
+//用于实时发送当前俯仰角，单位为°，也是在此处找到了地面站上面显示的俯仰角
+Matrix3f aaa;
+float aa;
+float bb;
+float cc;
+float dddd;
+Matrix3f board_rotation {0, 0, -1,
+                         0, 1, 0,
+                        1, 0, 0};
 void Plane::three_hz_loop()
 {
 #if AC_FENCE == ENABLED
     fence_check();
+    aaa = ahrs.get_rotation_body_to_ned() * board_rotation;
+    aaa.to_euler(&aa, &bb, &cc);
+    dddd = degrees(bb);
+    gcs().send_text(MAV_SEVERITY_CRITICAL, 
+                "Current pitch: %.1f°",
+                dddd);
 #endif
 }
 
@@ -692,3 +706,17 @@ bool Plane::get_target_location(Location& target_loc)
 #endif // ENABLE_SCRIPTING
 
 AP_HAL_MAIN_CALLBACKS(&plane);
+
+/*Matrix3f aaa;
+float aaaa;
+void Plane::three_hz_loop()
+{
+#if AC_FENCE == ENABLED
+    fence_check();
+    aaa = ahrs.get_rotation_body_to_ned();
+    aaa.to_euler(&roll, &pitch, &yaw);
+    gcs().send_text(MAV_SEVERITY_CRITICAL, 
+                "Current pitch: %.1f°",
+                aaaa);
+#endif
+}*/

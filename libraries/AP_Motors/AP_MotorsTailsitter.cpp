@@ -23,6 +23,41 @@
 #include "AP_MotorsTailsitter.h"
 #include <GCS_MAVLink/GCS.h>
 
+#include <math.h>
+
+
+//控制分配矩阵定义及赋值
+
+//定义两个旋翼转速平方分别与各自的两个余弦值相乘
+float motor1_2_sin1;
+float motor1_2_cos1;
+float motor2_2_sin2;
+float motor2_2_cos2;
+
+//定义机体坐标系下旋翼在OXb与OZb轴上产生的力
+float force_OXb;
+float force_OZb;
+
+//定义机体坐标系下旋翼在三个轴上产生的力矩
+float moment_OXb;
+float moment_OYb;
+float moment_OZb;
+
+//定义旋翼推力系数
+float motor_Ct;
+
+//定义当前俯仰角
+float Cont_dist_pitch_cd;
+
+Matrix3f aaa1;
+    float aa1;
+    float bb1;
+    float cc1;
+    float dddd1;//原 ahrs_view->pitch_sensor，但是感觉又不太一样，因为反映出来的效果不同，现在无法证明因为无法直接将ahrs_view->pitch_sensor在地面站实时显示。
+    Matrix3f board_rotation1 {0, 0, -1,
+                                0, 1, 0,
+                                1, 0, 0};
+
 extern const AP_HAL::HAL& hal;
 
 #define SERVO_OUTPUT_RANGE  4500
@@ -147,7 +182,7 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     // apply voltage and air pressure compensation
     const float compensation_gain = get_compensation_gain();
     roll_thrust = (_roll_in + _roll_in_ff) * compensation_gain;
-    pitch_thrust = _pitch_in + _pitch_in_ff;
+    pitch_thrust = _pitch_in + _pitch_in_ff;  //这里是否能找到期望俯仰角相关的线索
     yaw_thrust = _yaw_in + _yaw_in_ff;
     throttle_thrust = get_throttle() * compensation_gain;
 
@@ -160,8 +195,66 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
         throttle_thrust = _throttle_thrust_max;
         limit.throttle_upper = true;
     }
+    
+ 
+    //aaa = ahrs.get_rotation_body_to_ned() * board_rotation; //此处为什么不能调用呢？因为.h文件当中没有 AP_AHRS_View *ahrs_view; 这样的声明或者定义 还有就是没有 #include "AP_AHRS/AP_AHRS_View.h" 这样的头文件声明
+    aaa1 = ahrs_view->get_rotation_body_to_ned() * board_rotation1; //之后这种调用
+    aaa1.to_euler(&aa1, &bb1, &cc1);
+    dddd1 = degrees(bb1) * 100.0f;
+    
+    //为当前俯仰角赋值
+    Cont_dist_pitch_cd = dddd1;
 
+    //赋值 机体坐标系下旋翼在OXb与OZb轴上产生的力
+    force_OXb = -1.0 * throttle_thrust * sinf(radians((Cont_dist_pitch_cd) / 100.0f));
+    force_OZb = throttle_thrust * cosf(radians((Cont_dist_pitch_cd) / 100.0f));  
+
+    //赋值 机体坐标系下旋翼在三个轴上产生的力矩
+    moment_OXb = roll_thrust;
+    moment_OYb = pitch_thrust;
+    moment_OZb = yaw_thrust;
+
+    motor1_2_sin1 = -1.0 * force_OXb + moment_OYb - moment_OZb;
+    motor1_2_cos1 = -1.0 * force_OZb + moment_OXb;
+    motor2_2_sin2 = -1.0 * force_OXb + moment_OYb + moment_OZb;
+    motor2_2_cos2 = -1.0 * force_OZb - moment_OXb;
+
+    //为电机推力系数赋值
+    motor_Ct = 0.00000874; //因为后面要归一化处理，这个系数就先不乘试试看
+    
     // calculate left and right throttle outputs
+    //尾座式的控制分配矩阵两个电机的推力在这两句 0625到了就是看看是否又要进行归一化处理。
+    _thrust_left  = sqrtf((motor1_2_sin1 * motor1_2_sin1) + (motor1_2_cos1 * motor1_2_cos1));
+    _thrust_right = sqrtf((motor2_2_sin2 * motor2_2_sin2) + (motor2_2_cos2 * motor2_2_cos2));
+
+    // if max thrust is more than one reduce average throttle
+    thrust_max = MAX(_thrust_right,_thrust_left);
+    if (thrust_max > 1.0f) {
+        thr_adj = 1.0f - thrust_max;
+        limit.throttle_upper = true;
+        limit.roll = true;
+        limit.pitch = true;
+    }
+
+    // Add adjustment to reduce average throttle
+    _thrust_left  = constrain_float(_thrust_left  + thr_adj, 0.0f, 1.0f); //这里应该就是将推力进行归一化处理的位置
+    _thrust_right = constrain_float(_thrust_right + thr_adj, 0.0f, 1.0f);
+    _throttle = throttle_thrust + thr_adj;
+    // compensation_gain can never be zero
+    _throttle_out = _throttle / compensation_gain;
+
+    // thrust vectoring
+    //尾座式的控制分配矩阵两个倾转舵机的角度在这两句 0625到了就是看看是否又要进行归一化处理。
+    _tilt_left  = constrain_float(degrees(atanf((motor1_2_sin1)/(motor1_2_cos1))) , -90.0f, 90.0f); //degrees(atanf((motor1_2_sin1)/(motor1_2_cos1)))求出的是倾转舵机应当偏转的角度，再进行归一化处理
+    _tilt_right = constrain_float(degrees(atanf((motor2_2_sin2)/(motor2_2_cos2))) , -90.0f, 90.0f);
+    
+    //_tilt_left  = degrees(atanf((motor1_2_sin1)/(motor1_2_cos1))) * 100.0f; //有疑问，明天再看，需要再缩放
+    //_tilt_right = degrees(atanf((motor2_2_sin2)/(motor2_2_cos2))) * 100.0f;
+    
+    
+    /* 原语句
+    // calculate left and right throttle outputs
+    //尾座式的控制分配矩阵两个电机的推力在这两句
     _thrust_left  = throttle_thrust + roll_thrust * 0.5f;
     _thrust_right = throttle_thrust - roll_thrust * 0.5f;
 
@@ -182,8 +275,10 @@ void AP_MotorsTailsitter::output_armed_stabilizing()
     _throttle_out = _throttle / compensation_gain;
 
     // thrust vectoring
+    //尾座式的控制分配矩阵两个倾转舵机的角度在这两句
     _tilt_left  = pitch_thrust - yaw_thrust;
     _tilt_right = pitch_thrust + yaw_thrust;
+    */
 }
 
 // output_test_seq - spin a motor at the pwm value specified

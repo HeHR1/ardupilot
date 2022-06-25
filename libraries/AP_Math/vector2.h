@@ -43,7 +43,7 @@ struct Vector2
 {
     T x, y;
 
-    // trivial ctor
+    // trivial ctor  //简单构造函数 ctor同constructor
     constexpr Vector2<T>()
         : x(0)
         , y(0) {}
@@ -276,8 +276,8 @@ struct Vector2
     }
 };
 
-typedef Vector2<int16_t>        Vector2i;
-typedef Vector2<uint16_t>       Vector2ui;
+typedef Vector2<int16_t>        Vector2i;  //typedef 定义数据类型，C++给出的数据类型常见的有int、float、double等 详见：https://blog.csdn.net/lwbeyond/article/details/6191942 以及https://blog.csdn.net/weixin_41001497/article/details/108076377
+typedef Vector2<uint16_t>       Vector2ui; //tpyedef 常用做定义别名，其形式为 typedef 原类型名 新类型名
 typedef Vector2<int32_t>        Vector2l;
 typedef Vector2<uint32_t>       Vector2ul;
 typedef Vector2<float>          Vector2f;

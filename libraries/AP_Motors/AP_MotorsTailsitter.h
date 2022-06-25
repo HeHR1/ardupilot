@@ -6,7 +6,7 @@
 #include <AP_Math/AP_Math.h>
 #include <SRV_Channel/SRV_Channel.h>
 #include "AP_MotorsMulticopter.h"
-
+#include "AP_AHRS/AP_AHRS_View.h"
 /// @class      AP_MotorsTailsitter
 class AP_MotorsTailsitter : public AP_MotorsMulticopter {
 public:
@@ -34,6 +34,8 @@ public:
     uint16_t get_motor_mask() override;
 
     const char* get_frame_string() const override { return "TAILSITTER"; }
+
+    AP_AHRS_View *ahrs_view; // 为了AP_MotorsTailsitter.cpp文件当中可以调用 ahrs_view ，以及用此来获取姿态角数据。
 
 protected:
     // calculate motor outputs

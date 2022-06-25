@@ -21,6 +21,38 @@
 #include <math.h>
 #include "Plane.h"
 
+
+float c_att_pitch0_cd = 0.0f;  //β0，解锁前飞机俯仰角；
+float cline_angle_cd = 0.0f;  //α，斜面倾角；
+//定义新的Euler角 θψφ
+        float new_roll_cd ; //a 
+        float new_pitch_cd ;//b
+        float new_yaw_cd ;  //c
+
+        //定义原始Euler角
+        float old_roll_cd = 0.0f;
+        float old_pitch_cd = 0.0f;
+        float old_yaw_cd = 0.0f;
+
+        //定义原始Euler角的三角函数值
+        float nocr = 0.0f; //old_cos_roll
+        float nosr = 0.0f; //old_sin_roll
+        float nocp = 0.0f; //old_cos_pitch
+        float nosp = 0.0f; //old_sin_pitch
+        float nocy = 0.0f; //old_cos_yaw
+        float nosy = 0.0f; //old_sin_yaw
+        
+        //定义判定值
+        float new_judge1 = 0.0;//判定条件，float new_judge = sinc = cosθ * sinψ .
+        float new_judge0 = 0.0;
+
+        float des_pitch_cd ;
+        int32_t pitch_error_cd ; 
+        float extra_pitch ;
+
+        float extra_sign ;
+        float extra_elevator ;
+
 /*
   return true when flying a tailsitter
  */
@@ -175,7 +207,7 @@ void QuadPlane::tailsitter_output(void)
 
     tilt_left = 0.0f;
     tilt_right = 0.0f;
-    if (tailsitter.vectored_hover_gain > 0) {
+    if (tailsitter.vectored_hover_gain > 0) {  //如果推力悬停增益>0，对应地面站中这两个参数Q_TAILSIT_VHGAIN and Q_TAILSIT_VFGAIN，即旋翼模式下电机参与矢量控制
         // thrust vectoring VTOL modes
         tilt_left = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorLeft);
         tilt_right = SRV_Channels::get_output_scaled(SRV_Channel::k_tiltMotorRight);
@@ -184,11 +216,79 @@ void QuadPlane::tailsitter_output(void)
           power law. This allows the motors to point straight up for
           takeoff without integrator windup
          */
-        float des_pitch_cd = attitude_control->get_att_target_euler_cd().y;
-        int32_t pitch_error_cd = (des_pitch_cd - ahrs_view->pitch_sensor) * 0.5;
-        float extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
-        float extra_sign = extra_pitch > 0?1:-1;
-        float extra_elevator = 0;
+        //使用中途的旋转矩阵自己求Euler角，并将这个角度发送给地面站，在旋翼模式下，
+        //发现这好像是固定翼模式的样子求解的Euler角，所以乘了一个旋转矩阵（pitch90°），发现Euler角与显示的Euler角相同，之后用在倾转部分作为实时俯仰角，烧录后，初次成功不干涉。
+        /*
+        Matrix3f aaa;
+        float aa;
+        float bb;
+        float cc;
+        float dddd;//原 ahrs_view->pitch_sensor，但是感觉又不太一样，因为反映出来的效果不同，现在无法证明因为无法直接将ahrs_view->pitch_sensor在地面站实时显示。
+        Matrix3f board_rotation {0, 0, -1,
+                                0, 1, 0,
+                                1, 0, 0};
+        aaa = ahrs.get_rotation_body_to_ned() * board_rotation;
+        aaa.to_euler(&aa, &bb, &cc);
+        dddd = degrees(bb) * 100.0f;
+
+        des_pitch_cd = attitude_control->get_att_target_euler_cd().y;
+        pitch_error_cd = (des_pitch_cd - dddd) * 0.5;
+        extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;  
+        //constrain(amt,low,high)函数的工作过程是：如果amt小于low，则返回low；如果amt大于high，则返回high；否则，返回amt。函数一般可以用于将值归一化到某个区间内。
+        //在此处意思是pitch_error_cd若在（-4500cd，4500cd）这一区间内，则extra_pitch = pitch_error_cd / 4500 （类似归一化处理）；
+		                            //若不在（-4500cd，4500cd）这一区间内，若小于-4500cd，则extra_pitch  = -1，
+						                                                //若大于4500cd，则extra_pitch  = 1。
+        extra_sign = extra_pitch > 0?1:-1;
+        extra_elevator = 0;
+        if (!is_zero(extra_pitch) && in_vtol_mode()) {
+            extra_elevator = extra_sign * powf(fabsf(extra_pitch), tailsitter.vectored_hover_power) * SERVO_MAX; 
+            //c = powf（a,b）；c = a的b次方。float fabsf(float a);//处理float类型的取绝对值
+        }
+        
+        tilt_left  = extra_elevator + tilt_left * tailsitter.vectored_hover_gain;  //tilt_left的范围为 -4500cd ~ 4500cd。地面试验设置tilt_left为常数，查看舵机偏转推导得。
+        tilt_right = extra_elevator + tilt_right * tailsitter.vectored_hover_gain;  //tilt_right的范围为 -4500cd ~ 4500cd。地面试验设置tilt_right为常数，查看舵机偏转推导得。
+        
+        //定义电子围栏 
+        
+        float c_att_pitch_cd = dddd;  //β，实时飞机俯仰角；
+        float c_apm_cline_cd = 250.0f;  //结构设计导致的飞控与斜面夹角，目前测量为2.5度
+        uint16_t switch_7 = RC_Channels::get_radio_in(CH_7);  //获取遥控器通道7的PWM值。
+        #define PI 3.1415927  //定义π = 3.1415927；
+
+        //设置拨杆开关来开启/关闭 定义 初始飞机的俯仰角c_att_pitch0_cd 、斜面倾角cline_angle_cd。
+        //遥控器通道7的PWM值超过1700时，也就是开关处于上方时，初始飞机的俯仰角c_att_pitch0_cd动态变化；
+        //遥控器通道7的PWM值低于1700时，也就是开关处于中或下方时，初始飞机的俯仰角c_att_pitch0_cd不变，实现起飞时飞控确定初始飞机的俯仰角、斜面倾角；
+        if( switch_7 > 1700 )
+        {
+            c_att_pitch0_cd = dddd;
+            cline_angle_cd = 9000.0f + c_att_pitch0_cd - c_apm_cline_cd; 
+        }
+        
+        c_att_pitch_cd = dddd;
+        
+        //γ，舵机偏转角度，之后γ/2与tilt_left比较；加6度冗余;γ/2与tilt_left比较的原因是：tilt_left的范围为 -4500cd ~ 4500cd。
+        //L1 = 338.61 mm,L4 = 131.1498 mm ,η = 6063.6f cd，L1为整机长度，L4为倾转转轴与螺旋桨桨尖的距离，L2为倾转部分的长度，L3为9寸桨半径，η为L2与L4的夹角。
+        float c_att_servo_cd = -1.0f * asinf(338.61 / 131.1498 * sinf(((c_att_pitch_cd - c_att_pitch0_cd) / 100.0f + c_apm_cline_cd / 100.0f) * PI / 180.0f)) / PI * 180.0f * 100.0f - (c_att_pitch_cd - c_att_pitch0_cd) + 6063.6f - c_apm_cline_cd + 200.0f;  
+        
+        //在 tilt_left、tilt_right、γ 都大于0时，且 tilt_left < γ/2，则 tilt_left = γ/2，tilt_right = γ/2；保证螺旋桨与地面不干涉；
+        if(tilt_left > 0 && tilt_right > 0 && c_att_servo_cd > 0 && tilt_left < (c_att_servo_cd / 2.0f) )
+        {
+            tilt_left = c_att_servo_cd / 2.0f;
+            tilt_right = c_att_servo_cd / 2.0f;
+        }
+        
+        //在 tilt_left、tilt_right、γ 都小于0时，且 tilt_left > γ/2，则 tilt_left = γ/2，tilt_right = γ/2；保证螺旋桨与地面不干涉；
+        if(tilt_left < 0 && tilt_right < 0 && c_att_servo_cd < 0 && tilt_left > (c_att_servo_cd / 2.0f) )
+        {
+            tilt_left = c_att_servo_cd / 2.0f;
+            tilt_right = c_att_servo_cd / 2.0f;
+        }
+        */
+        des_pitch_cd = attitude_control->get_att_target_euler_cd().y;
+        pitch_error_cd = (des_pitch_cd - ahrs_view->pitch_sensor) * 0.5;
+        extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;
+        extra_sign = extra_pitch > 0?1:-1;
+        extra_elevator = 0;
         if (!is_zero(extra_pitch) && in_vtol_mode()) {
             extra_elevator = extra_sign * powf(fabsf(extra_pitch), tailsitter.vectored_hover_power) * SERVO_MAX;
         }
@@ -487,3 +587,95 @@ void QuadPlane::tailsitter_speed_scaling(void)
         SRV_Channels::set_output_scaled(functions[i], v);
     }
 }
+
+/*
+//为原始Euler角的三角函数值赋值
+        nocr = cosf(radians((ahrs_view->roll_sensor) / 100.0f)); 
+        nosr = sinf(radians((ahrs_view->roll_sensor) / 100.0f)); 
+        nocp = cosf(radians((ahrs_view->pitch_sensor) / 100.0f));
+        nosp = sinf(radians((ahrs_view->pitch_sensor) / 100.0f));
+        nocy = cosf(radians((ahrs_view->yaw_sensor) / 100.0f));
+        nosy = sinf(radians((ahrs_view->yaw_sensor) / 100.0f)); 
+
+        //定义转换关系（包括情况判断）
+
+        //设置判定值
+        new_judge1 = nocp * nosy;  //new_judge = cosθ * sinψ .
+        new_judge0 = sqrtf(1 - (powf(new_judge1,2)));
+        
+        new_roll_cd = 0.0f;
+        new_pitch_cd = 0.0f;
+        new_yaw_cd = 0.0f;
+
+        //目前判断语句只写出cosc为正数
+        if(new_judge0 <= 0.0000001f) 
+        {
+            //new_judge0很小时，new_judge1为±1，就是特殊情况
+            //还未对值的范围进行约束，不过这个函数是否已经进行了约束呢？
+            //此时实际上是无解的，但是一般不会遇到，暂时随便赋值，后面可以改成四元数求解。
+            new_roll_cd = 9000.0f;
+            new_pitch_cd = 9000.0f;
+            new_yaw_cd = 9000.0f;      
+        }
+        else 
+        {
+            //new_judge0大一些时，new_judge1不为±1，就是正常情况
+            //还未对值的范围进行约束，不过这个函数是否已经进行了约束呢？
+            //参见函数wrap_PI()与wrap_2PI()。
+            new_roll_cd = degrees(atanf((-1.0f * nocr * nosp * nosy + nosr * nocy)/(nosr * nosp * nosy + nocr * nocy))) * 100.0f;
+            new_pitch_cd = degrees(atanf((nosp)/(nocp * nocy))) * 100.0f;
+            new_yaw_cd = degrees(acosf(new_judge0)) * 100.0f;     
+        }
+        
+        //修改
+        des_pitch_cd = attitude_control->get_att_target_euler_cd().y;
+        pitch_error_cd = (des_pitch_cd - new_pitch_cd) * 0.5; 
+        extra_pitch = constrain_float(pitch_error_cd, -SERVO_MAX, SERVO_MAX) / SERVO_MAX;  //constrain(amt,low,high)函数的工作过程是：如果amt小于low，则返回low；如果amt大于high，则返回high；否则，返回amt。函数一般可以用于将值归一化到某个区间内。
+        //在此处意思是pitch_error_cd若在（-4500cd，4500cd）这一区间内，则extra_pitch = pitch_error_cd / 4500 （类似归一化处理）；
+		                            //若不在（-4500cd，4500cd）这一区间内，若小于-4500cd，则extra_pitch  = -1，
+						                                                //若大于4500cd，则extra_pitch  = 1。
+        extra_sign = extra_pitch > 0?1:-1;
+        extra_elevator = 0;
+        if (!is_zero(extra_pitch) && in_vtol_mode()) {
+            extra_elevator = extra_sign * powf(fabsf(extra_pitch), tailsitter.vectored_hover_power) * SERVO_MAX;  //c = powf（a,b）；c = a的b次方。float fabsf(float a);//处理float类型的取绝对值
+        }
+        
+        tilt_left  = extra_elevator + tilt_left * tailsitter.vectored_hover_gain;  //tilt_left的范围为 -4500cd ~ 4500cd。地面试验设置tilt_left为常数，查看舵机偏转推导得。
+        tilt_right = extra_elevator + tilt_right * tailsitter.vectored_hover_gain;  //tilt_right的范围为 -4500cd ~ 4500cd。地面试验设置tilt_right为常数，查看舵机偏转推导得。
+        
+        //定义电子围栏 
+        
+        float c_att_pitch_cd = new_pitch_cd;  //β，实时飞机俯仰角；
+        float c_apm_cline_cd = 250.0f;  //结构设计导致的飞控与斜面夹角，目前测量为2.5度
+        uint16_t switch_7 = RC_Channels::get_radio_in(CH_7);  //获取遥控器通道7的PWM值。
+        #define PI 3.1415927  //定义π = 3.1415927；
+
+        //设置拨杆开关来开启/关闭 定义 初始飞机的俯仰角c_att_pitch0_cd 、斜面倾角cline_angle_cd。
+        //遥控器通道7的PWM值超过1700时，也就是开关处于上方时，初始飞机的俯仰角c_att_pitch0_cd动态变化；
+        //遥控器通道7的PWM值低于1700时，也就是开关处于中或下方时，初始飞机的俯仰角c_att_pitch0_cd不变，实现起飞时飞控确定初始飞机的俯仰角、斜面倾角；
+        if( switch_7 > 1700 )
+        {
+            c_att_pitch0_cd = new_pitch_cd;
+            cline_angle_cd = 9000.0f + c_att_pitch0_cd; 
+        }
+        
+        c_att_pitch_cd = new_pitch_cd;
+
+        //γ，舵机偏转角度，之后γ/2与tilt_left比较；加6度冗余;γ/2与tilt_left比较的原因是：tilt_left的范围为 -4500cd ~ 4500cd。
+        //L1 = 338.61 mm,L4 = 131.1498 mm ,η = 6063.6f cd，L1为整机长度，L4为倾转转轴与螺旋桨桨尖的距离，L2为倾转部分的长度，L3为9寸桨半径，η为L2与L4的夹角。
+        float c_att_servo_cd = -1.0f * asinf(338.61 / 131.1498 * sinf(((c_att_pitch_cd - c_att_pitch0_cd) / 100.0f + c_apm_cline_cd / 100.0f) * PI / 180.0f)) / PI * 180.0f * 100.0f - (c_att_pitch_cd - c_att_pitch0_cd) + 6063.6f - c_apm_cline_cd + 600.0f;  
+        
+        //在 tilt_left、tilt_right、γ 都大于0时，且 tilt_left < γ/2，则 tilt_left = γ/2，tilt_right = γ/2；保证螺旋桨与地面不干涉；
+        if(tilt_left > 0 && tilt_right > 0 && c_att_servo_cd > 0 && tilt_left < (c_att_servo_cd / 2.0f) )
+        {
+            tilt_left = c_att_servo_cd / 2.0f;
+            tilt_right = c_att_servo_cd / 2.0f;
+        }
+        
+        //在 tilt_left、tilt_right、γ 都小于0时，且 tilt_left > γ/2，则 tilt_left = γ/2，tilt_right = γ/2；保证螺旋桨与地面不干涉；
+        if(tilt_left < 0 && tilt_right < 0 && c_att_servo_cd < 0 && tilt_left > (c_att_servo_cd / 2.0f) )
+        {
+            tilt_left = c_att_servo_cd / 2.0f;
+            tilt_right = c_att_servo_cd / 2.0f;
+        }
+        */

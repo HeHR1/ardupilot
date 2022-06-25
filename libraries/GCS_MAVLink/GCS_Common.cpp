@@ -430,12 +430,12 @@ void GCS_MAVLINK::send_proximity()
 
 // report AHRS2 state
 void GCS_MAVLINK::send_ahrs2()
-{
+{  // #if 是判断是否为真
 #if AP_AHRS_NAVEKF_AVAILABLE
     const AP_AHRS &ahrs = AP::ahrs();
     Vector3f euler;
     struct Location loc {};
-    // we want one or both of these, use | to avoid short-circuiting:
+    // we want one or both of these, use | to avoid short-circuiting: //我们需要其中一个或两个，使用|来避免短路:
     if (ahrs.get_secondary_attitude(euler) |
         ahrs.get_secondary_position(loc)) {
         mavlink_msg_ahrs2_send(chan,

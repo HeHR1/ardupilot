@@ -67,7 +67,7 @@ void AP_AHRS_DCM::load_watchdog_home()
 void
 AP_AHRS_DCM::update(bool skip_ins_update)
 {
-    // support locked access functions to AHRS data
+    // support locked access functions to AHRS data  //支持对AHRS数据的锁定（还是上锁时呢）访问功能
     WITH_SEMAPHORE(_rsem);
 
     if (_last_startup_ms == 0) {
@@ -94,22 +94,22 @@ AP_AHRS_DCM::update(bool skip_ins_update)
         return;
     }
 
-    // Integrate the DCM matrix using gyro inputs
+    // Integrate the DCM matrix using gyro inputs  //使用陀螺仪输入集成DCM矩阵
     matrix_update(delta_t);
 
-    // Normalize the DCM matrix
+    // Normalize the DCM matrix  //归一化DCM矩阵
     normalize();
 
-    // Perform drift correction
+    // Perform drift correction  //执行漂移修正
     drift_correction(delta_t);
 
-    // paranoid check for bad values in the DCM matrix
+    // paranoid check for bad values in the DCM matrix  //偏执地检查DCM矩阵中的错误值
     check_matrix();
 
-    // Calculate pitch, roll, yaw for stabilization and navigation
+    // Calculate pitch, roll, yaw for stabilization and navigation  //计算俯仰，滚转，偏航来稳定导航  
     euler_angles();
 
-    // update trig values including _cos_roll, cos_pitch
+    // update trig values including _cos_roll, cos_pitch  //更新包括_cos_roll, cos_pitch在内的三角函数值  
     update_trig();
 
     // update AOA and SSA
@@ -117,16 +117,16 @@ AP_AHRS_DCM::update(bool skip_ins_update)
 
     backup_attitude();
 
-    // update takeoff/touchdown flags
+    // update takeoff/touchdown flags  //更新起飞/着陆标志
     update_flags();
 
-    // remember the last origin for fallback support
+    // remember the last origin for fallback support  //记住备份支持的最后一个来源
     IGNORE_RETURN(AP::ahrs().get_origin(last_origin));
 }
 
 /*
-  backup attitude to persistent_data for use in watchdog reset
- */
+  backup attitude to persistent_data for use in watchdog reset 
+ */  //备份姿态数据到persistent_data（不变数据），用于看门狗复位  
 void AP_AHRS_DCM::backup_attitude(void)
 {
     AP_HAL::Util::PersistentData &pd = hal.util->persistent_data;
@@ -135,7 +135,7 @@ void AP_AHRS_DCM::backup_attitude(void)
     pd.yaw_rad = yaw;
 }
 
-// update the DCM matrix using only the gyros
+// update the DCM matrix using only the gyros  //只使用陀螺仪更新DCM矩阵
 void
 AP_AHRS_DCM::matrix_update(float _G_Dt)
 {
@@ -144,12 +144,14 @@ AP_AHRS_DCM::matrix_update(float _G_Dt)
     // and including the P terms would give positive feedback into
     // the _P_gain() calculation, which can lead to a very large P
     // value
+    //注意，我们在_omega中没有包含P项。 这是因为spin_rate是由_omega.length()计算出来的，而包含P项会给_P_gain()计算带来正反馈，这可能导致一个非常大的P值 
     _omega.zero();
 
     // average across first two healthy gyros. This reduces noise on
     // systems with more than one gyro. We don't use the 3rd gyro
     // unless another is unhealthy as 3rd gyro on PH2 has a lot more
     // noise
+    //平均前两个健康陀螺。 这减少了具有多个陀螺的系统的噪声。 我们不会使用第三个陀螺仪，除非另一个陀螺仪不健康，因为PH2上的第三个陀螺仪噪音更大  
     uint8_t healthy_count = 0;
     Vector3f delta_angle;
     const AP_InertialSensor &_ins = AP::ins();
@@ -177,14 +179,14 @@ AP_AHRS_DCM::matrix_update(float _G_Dt)
 /*
  *  reset the DCM matrix and omega. Used on ground start, and on
  *  extreme errors in the matrix
- */
+ */  //重置DCM矩阵和。用于地面启动，以及矩阵中的极端错误
 void
 AP_AHRS_DCM::reset(bool recover_eulers)
 {
-    // support locked access functions to AHRS data
+    // support locked access functions to AHRS data  //支持对AHRS数据的锁定访问功能
     WITH_SEMAPHORE(_rsem);
     
-    // reset the integration terms
+    // reset the integration terms  //角速度PI归0重置？
     _omega_I.zero();
     _omega_P.zero();
     _omega_yaw_P.zero();
@@ -193,6 +195,7 @@ AP_AHRS_DCM::reset(bool recover_eulers)
     // if the caller wants us to try to recover to the current
     // attitude then calculate the dcm matrix from the current
     // roll/pitch/yaw values
+    //如果呼叫者希望我们尝试恢复到当前姿态，那么从当前滚转/俯仰/偏航值计算DCM矩阵
     if (hal.util->was_watchdog_reset() && AP_HAL::millis() < 10000) {
         const AP_HAL::Util::PersistentData &pd = hal.util->persistent_data;
         roll = pd.roll_rad;
@@ -207,28 +210,29 @@ AP_AHRS_DCM::reset(bool recover_eulers)
 
         // Use the measured accel due to gravity to calculate an initial
         // roll and pitch estimate
+        //使用测量的重力加速度来计算初始滚转和俯仰估计  
 
         AP_InertialSensor &_ins = AP::ins();
 
-        // Get body frame accel vector
+        // Get body frame accel vector  //获取机体加速度矢量
         Vector3f initAccVec = _ins.get_accel();
         uint8_t counter = 0;
 
-        // the first vector may be invalid as the filter starts up
+        // the first vector may be invalid as the filter starts up  //当滤波器启动时，第一个向量可能无效
         while ((initAccVec.length() < 9.0f || initAccVec.length() > 11) && counter++ < 20) {
             _ins.wait_for_sample();
             _ins.update();
             initAccVec = _ins.get_accel();
         }
 
-        // normalise the acceleration vector
+        // normalise the acceleration vector  //归一化加速度矢量
         if (initAccVec.length() > 5.0f) {
             // calculate initial pitch angle
-            pitch = atan2f(initAccVec.x, norm(initAccVec.y, initAccVec.z));
+            pitch = atan2f(initAccVec.x, norm(initAccVec.y, initAccVec.z));  //网上与系统里面的norm函数定义不太一样
             // calculate initial roll angle
             roll = atan2f(-initAccVec.y, -initAccVec.z);
         } else {
-            // If we can't use the accel vector, then align flat
+            // If we can't use the accel vector, then align flat  //如果我们不能使用加速度矢量，那么对齐平面  
             roll = 0.0f;
             pitch = 0.0f;
         }

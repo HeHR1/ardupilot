@@ -547,7 +547,9 @@ void QuaternionT<T>::rotate_fast(const Vector3<T> &v)
     q4 = w1*z2 + x1*y2 - y1*x2 + z1*w2;
 }
 
-// get euler roll angle
+// get euler roll angle 
+ //企图将显示的roll与yaw角度互换，在此处（四元数转Euler角)进行修改是无效的，所以应当试验：在使用Euler角的位置用获得的四元数乘上新的（四元数转Euler角)转换关系，
+ //或者能不能在使用Euler角的位置用Euler角先转换为四元数，再乘上新的（四元数转Euler角)转换关系，有个问题，大角度时候Euler角是错的，那么其转回的四元数是否是原来正确的四元数呢？
 template <typename T>
 T QuaternionT<T>::get_euler_roll() const
 {
